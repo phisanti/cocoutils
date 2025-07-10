@@ -1,13 +1,12 @@
 import os
-import json
 import numpy as np
-import tifffile
 import multiprocessing
 from tqdm import tqdm
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, Any, List
 
 from ..utils.geometry import create_segmentation_mask
+from ..utils.io import load_coco, save_tiff
 
 class CocoReconstructor:
     """
@@ -27,7 +26,7 @@ class CocoReconstructor:
             workers (int): Number of parallel workers (0 = all cores, 1 = sequential).
         """
         os.makedirs(output_dir, exist_ok=True)
-        coco_data = self._load_coco_annotations(coco_file)
+        coco_data = load_coco(coco_file)
         
         if workers is None or workers == 1:
             for img_info in tqdm(coco_data['images'], desc="Creating masks (sequential)"):
@@ -41,11 +40,6 @@ class CocoReconstructor:
                 ]
                 for _ in tqdm(as_completed(futures), total=len(futures), desc=f"Creating masks ({num_workers} workers)"):
                     pass
-
-    def _load_coco_annotations(self, coco_file: str) -> Dict[str, Any]:
-        """Loads COCO annotations from a JSON file."""
-        with open(coco_file, 'r') as f:
-            return json.load(f)
 
     def _create_mask_from_annotations(self, coco_data: Dict[str, Any], image_id: int, width: int, height: int) -> np.ndarray:
         """Creates a mask for a single image."""
@@ -81,5 +75,4 @@ class CocoReconstructor:
         mask = self._create_mask_from_annotations(coco_data, image_id, width, height)
         
         out_path = os.path.join(output_dir, file_name)
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-        tifffile.imwrite(out_path, mask)
+        save_tiff(mask, out_path)

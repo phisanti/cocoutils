@@ -1,8 +1,6 @@
 import os
-import json
 import numpy as np
 import datetime
-import tifffile
 from tqdm import tqdm
 from pathlib import Path
 from scipy.ndimage import label
@@ -12,6 +10,7 @@ from typing import List, Dict, Any, Tuple
 
 from ..utils.categories import CategoryManager
 from ..utils.geometry import create_segmentation_mask
+from ..utils.io import save_coco, load_tiff
 
 class CocoConverter:
     """
@@ -67,7 +66,7 @@ class CocoConverter:
         for image_id, tiff_file in enumerate(tqdm(tiff_files, desc="Processing images"), 1):
             file_path = os.path.join(input_dir, tiff_file)
             try:
-                img = tifffile.imread(file_path)
+                img = load_tiff(file_path)
                 image_info, coco_annotations = self._process_image(img, image_id, tiff_file, annotation_id)
                 
                 if image_info:
@@ -169,5 +168,4 @@ class CocoConverter:
         """
         Saves the COCO data to a JSON file.
         """
-        with open(output_file, 'w') as f:
-            json.dump(self.coco_data, f, indent=2)
+        save_coco(self.coco_data, output_file)

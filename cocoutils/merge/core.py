@@ -1,5 +1,5 @@
-import json
 from typing import Dict, Any, List, Tuple
+from ..utils.io import load_coco, save_coco
 
 class CocoMerger:
     """
@@ -18,10 +18,8 @@ class CocoMerger:
             file2_path (str): Path to the second COCO file.
             output_path (str): Path to save the merged COCO file.
         """
-        with open(file1_path, 'r') as f:
-            coco1 = json.load(f)
-        with open(file2_path, 'r') as f:
-            coco2 = json.load(f)
+        coco1 = load_coco(file1_path)
+        coco2 = load_coco(file2_path)
 
         # Basic validation
         self._validate_categories(coco1.get('categories', []), coco2.get('categories', []))
@@ -50,8 +48,7 @@ class CocoMerger:
         # as they have been validated to be compatible.
         merged_coco['categories'] = coco2.get('categories', [])
 
-        with open(output_path, 'w') as f:
-            json.dump(merged_coco, f, indent=2)
+        save_coco(merged_coco, output_path)
 
     def _validate_categories(self, cats1: List[Dict[str, Any]], cats2: List[Dict[str, Any]]):
         """
