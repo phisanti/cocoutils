@@ -1,6 +1,8 @@
 from pycocotools import mask as mask_utils
 from typing import List
 import torch
+from shapely.geometry import Polygon
+from shapely.ops import unary_union
 
 def determine_polygon_orientation(polygon: List[float]) -> int:
     """
@@ -85,3 +87,39 @@ def create_segmentation_mask(segmentation, segmentation_types, img_height, img_w
     if final_mask is not None:
         return torch.from_numpy(final_mask).float()
     return None
+
+
+def bbox_from_polygons(polygons: List[Polygon]) -> List[float]:
+    """
+    Compute COCO-style bbox [x, y, w, h] from a list of Shapely polygons.
+    
+    Args:
+        polygons (List[Polygon]): List of Shapely Polygon objects.
+        
+    Returns:
+        List[float]: Bounding box in COCO format [x, y, width, height].
+                    Returns [0, 0, 0, 0] if list is empty or all polygons are invalid.
+    """
+    if not polygons:
+        return [0.0, 0.0, 0.0, 0.0]
+    
+    # Filter out invalid polygons
+    valid_polygons = [p for p in polygons if p.is_valid and not p.is_empty]
+    
+    if not valid_polygons:
+        return [0.0, 0.0, 0.0, 0.0]
+    
+    # Create union of all polygons to get overall bounds
+    if len(valid_polygons) == 1:
+        combined = valid_polygons[0]
+    else:
+        combined = unary_union(valid_polygons)
+    
+    # Get bounds: (minx, miny, maxx, maxy)
+    minx, miny, maxx, maxy = combined.bounds
+    
+    # Convert to COCO format [x, y, width, height]
+    width = max(0.0, maxx - minx)
+    height = max(0.0, maxy - miny)
+    
+    return [float(minx), float(miny), float(width), float(height)]

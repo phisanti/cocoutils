@@ -9,7 +9,7 @@ from shapely.geometry import Polygon, MultiPolygon
 from typing import List, Dict, Any, Tuple
 
 from ..utils.categories import CategoryManager
-from ..utils.geometry import create_segmentation_mask
+from ..utils.geometry import create_segmentation_mask, bbox_from_polygons
 from ..utils.io import save_coco, load_tiff
 
 class CocoConverter:
@@ -147,11 +147,8 @@ class CocoConverter:
         if not polygons:
             return None
 
+        bbox = bbox_from_polygons(polygons)
         multi_poly = MultiPolygon(polygons)
-        x, y, max_x, max_y = multi_poly.bounds
-        width = max_x - x
-        height = max_y - y
-        bbox = [x, y, width, height]
         area = multi_poly.area
 
         return {
