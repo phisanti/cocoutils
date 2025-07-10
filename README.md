@@ -20,47 +20,133 @@ This project provides a set of tools for working with COCO annotations. It is de
 To install the package, clone the repository and install it in editable mode using pip:
 
 ```bash
+git clone https://github.com/phisanti/cocoutils
+cd cocoutils
+pip install -e .
+```
+
+# cocoutils
+
+A toolkit for working with COCO annotations.
+
+`cocoutils` is a Python library **and** command-line tool for
+
+* converting segmentation masks **(TIFF)** to COCO JSON  
+* reconstructing masks from COCO JSON  
+* merging multiple COCO files  
+* visualising annotations (regular view or background-masked view)
+
+---
+
+## Installation
+
+```bash
 git clone <repository-url>
 cd cocoutils
 pip install -e .
 ```
 
-## Usage
+---
 
-`cocoutils` can be used as a command-line tool or as a Python library.
+## Command-line interface
 
-### Command-Line Interface
+All commands are exposed through the single entry-point `cocoutils`.
 
-The command-line interface is built with Typer and provides the following commands:
+### `convert`
 
-#### `convert`
-
-Converts segmentation masks to COCO format.
+Convert a directory of labelled TIFF masks to a COCO file.
 
 ```bash
-cocoutils convert --input-dir /path/to/masks --output-file /path/to/coco.json --categories /path/to/categories.json
+cocoutils convert \
+  --input-dir   /path/to/masks \
+  --output-file /path/to/coco.json \
+  --categories  /path/to/categories.json
 ```
 
-#### `reconstruct`
+### `reconstruct`
 
-Reconstructs segmentation masks from a COCO JSON file.
+Recreate individual mask images from a COCO file.
 
 ```bash
-cocoutils reconstruct --coco-file /path/to/coco.json --output-dir /path/to/reconstructed-masks
+cocoutils reconstruct \
+  --input-file  /path/to/coco.json \
+  --output-dir  /path/to/reconstructed-masks \
+  --workers     4        # 0 = use all CPU cores, 1 = sequential
 ```
 
-#### `merge`
+### `merge`
 
-Merges two COCO annotation files into a single file.
+Combine two compatible COCO files, automatically remapping IDs to avoid
+collisions.
 
 ```bash
-cocoutils merge --file1 /path/to/coco1.json --file2 /path/to/coco2.json --output-file /path/to/merged.json
+cocoutils merge \
+  --file1       /path/to/coco1.json \
+  --file2       /path/to/coco2.json \
+  --output-file /path/to/merged.json
 ```
 
-#### `visualise`
+### `visualise`
 
-Visualizes COCO annotations on an image.
+Draw annotations on top of an image (with optional masked view).
 
 ```bash
-cocoutils visualise --coco-file /path/to/coco.json --image-path /path/to/image.png
+# Standard view
+cocoutils visualise \
+  --coco-file  /path/to/coco.json \
+  --image-path /path/to/image.png
+
+# Masked view – background set to 0 for the selected annotations
+cocoutils visualise \
+  --coco-file       /path/to/coco.json \
+  --image-path      /path/to/image.png \
+  --masked-view \
+  --annotation-ids "1,2,3"
 ```
+
+---
+
+## Using as a Python library
+
+```python
+from cocoutils.convert   import CocoConverter
+from cocoutils.reconstruct import CocoReconstructor
+from cocoutils.merge     import CocoMerger
+from cocoutils.visualise import CocoVisualizer
+
+# Convert
+converter = CocoConverter(categories_path="categories.json")
+converter.from_masks("masks_dir", "annotations.json")
+
+# Reconstruct
+reconstructor = CocoReconstructor()
+reconstructor.from_coco("annotations.json", "reconstructed_masks", workers=4)
+
+# Merge
+merger = CocoMerger()
+merger.merge_files("a.json", "b.json", "merged.json")
+
+# Visualise
+viz = CocoVisualizer("annotations.json")
+viz.visualize("image.png")
+```
+
+---
+
+## Category definitions
+
+`convert` requires a **categories JSON** file whose content looks like:
+
+```json
+[
+  {"id": 1, "name": "cell"},
+  {"id": 2, "name": "nucleus"}
+]
+```
+
+IDs must be consecutive positive integers and names unique.
+
+---
+## License
+
+EULA
