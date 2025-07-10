@@ -12,9 +12,9 @@ app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, me
 
 @app.command()
 def convert(
-    input_dir: Annotated[str, typer.Option(help="Path to directory containing classified object TIFF images")],
-    output_file: Annotated[str, typer.Option(help="Path to save the COCO annotations JSON file")],
-    categories: Annotated[str, typer.Option(help="Path to the categories JSON file")]
+    input_dir: Annotated[str, typer.Option("--input-dir", "-i", help="Path to directory containing classified object TIFF images")],
+    output_file: Annotated[str, typer.Option("--output-file", "-o", help="Path to save the COCO annotations JSON file")],
+    categories: Annotated[str, typer.Option("--categories", "-c", help="Path to the categories JSON file")]
 ):
     """
     Converts segmentation masks to COCO format.
@@ -26,9 +26,9 @@ def convert(
 
 @app.command()
 def reconstruct(
-    coco_file: Annotated[str, typer.Option(help="Path to COCO annotations JSON file")],
-    output_dir: Annotated[str, typer.Option(help="Directory to save the generated mask images")],
-    workers: Annotated[int, typer.Option(help="Number of parallel workers")] = 0
+    coco_file: Annotated[str, typer.Option("--input-file", "-i", help="Path to COCO annotations JSON file")],
+    output_dir: Annotated[str, typer.Option("--output-dir", "-o", help="Directory to save the generated mask images")],
+    workers: Annotated[int, typer.Option("--workers", "-w", help="Number of parallel workers")] = 0
 ):
     """
     Reconstructs mask images from a COCO annotation file.
@@ -58,11 +58,11 @@ def merge(
 
 @app.command()
 def visualise(
-    coco_file: Annotated[str, typer.Option(help="Path to the COCO annotations JSON file")],
-    image_path: Annotated[str, typer.Option(help="Path to the image file to visualize")],
-    no_masks: Annotated[bool, typer.Option(help="Do not display segmentation masks")] = False,
-    no_bboxes: Annotated[bool, typer.Option(help="Do not display bounding boxes")] = False,
-    no_class_names: Annotated[bool, typer.Option(help="Do not display class names")] = False
+    coco_file: Annotated[str, typer.Option("--coco-file", "-c", help="Path to the COCO annotations JSON file")],
+    image_path: Annotated[str, typer.Option("--image-path", "-i", help="Path to the image file to visualize")],
+    no_masks: Annotated[bool, typer.Option("--no-masks", "-m", help="Do not display segmentation masks")] = False,
+    no_bboxes: Annotated[bool, typer.Option("--no-bboxes", "-b", help="Do not display bounding boxes")] = False,
+    no_class_names: Annotated[bool, typer.Option("--no-class-names", "-n", help="Do not display class names")] = False
 ):
     """
     Visualizes COCO annotations on an image.
