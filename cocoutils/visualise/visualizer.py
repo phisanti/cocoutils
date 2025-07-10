@@ -6,7 +6,9 @@ import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon as MplPolygon
 from pycocotools.coco import COCO
 from PIL import Image
-from typing import List, Optional, Tuple
+import torch
+from typing import List, Optional, Tuple, Union
+from ..utils.geometry import create_segmentation_mask
 
 class CocoVisualizer:
     """
@@ -105,3 +107,88 @@ class CocoVisualizer:
             poly = np.array(seg).reshape((-1, 2))
             ax.add_patch(MplPolygon(poly, closed=True, fill=True, color=color, alpha=0.4))
             ax.add_patch(MplPolygon(poly, closed=True, fill=False, edgecolor=color, linewidth=2))
+
+    def visualize_annotations_masked(self, image: np.ndarray, annotation_ids: Union[int, List[int]], 
+                                   ax: Optional[plt.Axes] = None, show: bool = True) -> Optional[plt.Axes]:
+        """
+        Visualize COCO annotations by masking out background pixels using RLE masks,
+        correctly handling holes by subtracting hole masks from positive masks.
+        All background pixels will be set to 0 for each object.
+        Uses create_segmentation_mask for consistent mask generation.
+        
+        Args:
+            image (np.ndarray): Image array to visualize on.
+            annotation_ids (Union[int, List[int]]): Annotation ID(s) to visualize.
+            ax (Optional[plt.Axes]): Matplotlib axes to plot on. If None, creates new figure.
+            show (bool): Whether to show the plot immediately.
+            
+        Returns:
+            Optional[plt.Axes]: The axes object if ax was None, otherwise None.
+        """
+        # Create axes if not provided
+        return_ax = ax is None
+        if ax is None:
+            fig, ax = plt.subplots(1, figsize=(15, 15))
+        
+        # Handle single annotation ID case
+        if isinstance(annotation_ids, int):
+            annotation_ids = [annotation_ids]
+            
+        try:
+            anns = self.coco.loadAnns(annotation_ids)
+        except KeyError:
+            print("No annotations found for the given IDs.")
+            if return_ax:
+                plt.close()
+            return None
+            
+        if not anns:
+            print("No annotations found for the given IDs.")
+            if return_ax:
+                plt.close()
+            return None
+
+        img_info = self.coco.imgs[anns[0]['image_id']]
+        img_disp = image.copy()
+        img_height = img_info["height"]
+        img_width = img_info["width"]
+
+        for ann in anns:
+            segmentation = ann.get('segmentation', None)
+            segmentation_types = ann.get('segmentation_types', None) 
+            bbox = ann.get('bbox', None)
+
+            if segmentation and bbox:
+                x, y, w, h = map(int, bbox)
+                
+                # Use create_segmentation_mask to handle positive areas and holes
+                full_mask = create_segmentation_mask(
+                    segmentation,
+                    segmentation_types,
+                    img_height,
+                    img_width
+                )
+                
+                if full_mask is not None:
+                    # Crop mask to bbox
+                    mask = full_mask[y:y+h, x:x+w]
+                    obj_img = torch.from_numpy(img_disp[y:y+h, x:x+w]).float()
+                    
+                    # If image is multi-channel, expand mask dims for broadcasting
+                    if obj_img.dim() == 3 and mask.dim() == 2:
+                        mask = mask.unsqueeze(-1)
+                    
+                    # Set background to 0
+                    obj_img = obj_img * mask
+                    
+                    # Place masked object back into image for visualization
+                    img_disp[y:y+h, x:x+w] = obj_img.numpy().astype(img_disp.dtype)
+
+        ax.imshow(img_disp)
+        ax.set_title("Masked objects (using create_segmentation_mask)")
+        ax.axis('off')
+        
+        if show and return_ax:
+            plt.show()
+            
+        return ax if return_ax else None

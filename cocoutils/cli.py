@@ -62,7 +62,9 @@ def visualise(
     image_path: Annotated[str, typer.Option("--image-path", "-i", help="Path to the image file to visualize")],
     no_masks: Annotated[bool, typer.Option("--no-masks", "-m", help="Do not display segmentation masks")] = False,
     no_bboxes: Annotated[bool, typer.Option("--no-bboxes", "-b", help="Do not display bounding boxes")] = False,
-    no_class_names: Annotated[bool, typer.Option("--no-class-names", "-n", help="Do not display class names")] = False
+    no_class_names: Annotated[bool, typer.Option("--no-class-names", "-n", help="Do not display class names")] = False,
+    masked_view: Annotated[bool, typer.Option("--masked-view", help="Show masked visualization (background pixels set to 0)")] = False,
+    annotation_ids: Annotated[str, typer.Option("--annotation-ids", help="Comma-separated annotation IDs for masked view (e.g., '1,2,3')")] = None
 ):
     """
     Visualizes COCO annotations on an image.
@@ -71,13 +73,41 @@ def visualise(
     try:
         visualizer = CocoVisualizer(coco_file=coco_file)
         fig, ax = plt.subplots(1, figsize=(15, 15))
-        visualizer.visualize(
-            image_path=image_path,
-            show_masks=not no_masks,
-            show_bboxes=not no_bboxes,
-            show_class_names=not no_class_names,
-            ax=ax
-        )
+        
+        if masked_view:
+            # Handle masked visualization
+            if annotation_ids is None:
+                print("Error: --annotation-ids is required when using --masked-view")
+                raise typer.Exit(code=1)
+            
+            # Parse annotation IDs
+            try:
+                ids = [int(id.strip()) for id in annotation_ids.split(',')]
+            except ValueError:
+                print("Error: Invalid annotation IDs format. Use comma-separated integers (e.g., '1,2,3')")
+                raise typer.Exit(code=1)
+            
+            # Load image for masked visualization
+            from PIL import Image
+            import numpy as np
+            image = np.array(Image.open(image_path))
+            
+            visualizer.visualize_annotations_masked(
+                image=image,
+                annotation_ids=ids,
+                ax=ax,
+                show=False
+            )
+        else:
+            # Standard visualization
+            visualizer.visualize(
+                image_path=image_path,
+                show_masks=not no_masks,
+                show_bboxes=not no_bboxes,
+                show_class_names=not no_class_names,
+                ax=ax
+            )
+        
         plt.tight_layout()
         plt.show()
     except (ValueError, FileNotFoundError) as e:
