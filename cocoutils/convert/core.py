@@ -1,0 +1,173 @@
+import os
+import json
+import numpy as np
+import datetime
+import tifffile
+from tqdm import tqdm
+from pathlib import Path
+from scipy.ndimage import label
+from skimage import measure
+from shapely.geometry import Polygon, MultiPolygon
+from typing import List, Dict, Any, Tuple
+
+from ..utils.categories import CategoryManager
+from ..utils.geometry import create_segmentation_mask
+
+class CocoConverter:
+    """
+    Converts segmentation masks to COCO format.
+    """
+
+    def __init__(self, categories_path: str):
+        """
+        Initializes the CocoConverter.
+
+        Args:
+            categories_path (str): Path to the categories JSON file.
+        """
+        self.category_manager = CategoryManager(categories_path)
+        self.coco_data = self._initialize_coco_structure()
+
+    def _initialize_coco_structure(self) -> Dict[str, Any]:
+        """
+        Initializes the basic COCO data structure.
+        """
+        return {
+            "info": {
+                "description": "Converted Dataset",
+                "url": "",
+                "version": "1.0",
+                "year": datetime.datetime.now().year,
+                "contributor": "cocoutils",
+                "date_created": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            },
+            "licenses": [],
+            "images": [],
+            "annotations": [],
+            "categories": self.category_manager.categories
+        }
+
+    def from_masks(self, input_dir: str, output_file: str):
+        """
+        Converts segmentation masks from a directory to a COCO JSON file.
+
+        Args:
+            input_dir (str): Path to the directory containing TIFF masks.
+            output_file (str): Path to save the output COCO JSON file.
+        """
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        
+        tiff_files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(('.tif', '.tiff'))])
+        
+        if not tiff_files:
+            print(f"No TIFF files found in {input_dir}")
+            return
+
+        annotation_id = 1
+        for image_id, tiff_file in enumerate(tqdm(tiff_files, desc="Processing images"), 1):
+            file_path = os.path.join(input_dir, tiff_file)
+            try:
+                img = tifffile.imread(file_path)
+                image_info, coco_annotations = self._process_image(img, image_id, tiff_file, annotation_id)
+                
+                if image_info:
+                    self.coco_data["images"].append(image_info)
+                if coco_annotations:
+                    self.coco_data["annotations"].extend(coco_annotations)
+                    annotation_id += len(coco_annotations)
+                    
+            except Exception as e:
+                print(f"Error processing {tiff_file}: {e}")
+
+        self._save_annotations(output_file)
+        print(f"Processed {len(tiff_files)} images with {annotation_id - 1} annotations.")
+        print(f"COCO annotations saved to {output_file}")
+
+    def _process_image(self, img: np.ndarray, image_id: int, tiff_file: str, start_annotation_id: int) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """
+        Processes a single image to extract COCO annotations.
+        """
+        coco_annotations = []
+        height, width = img.shape
+        image_info = {
+            "id": image_id,
+            "file_name": tiff_file,
+            "width": width,
+            "height": height,
+            "date_captured": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "license": None
+        }
+        
+        class_ids = np.unique(img)
+        class_ids = class_ids[class_ids > 0]
+        
+        annotation_id = start_annotation_id
+        for class_id in class_ids:
+            if class_id not in self.category_manager.id_to_name:
+                continue
+
+            class_mask = (img == class_id)
+            labeled_mask, num_objects = measure.label(class_mask, connectivity=1, return_num=True)
+            
+            for obj_idx in range(1, num_objects + 1):
+                sub_mask = (labeled_mask == obj_idx).astype(np.uint8)
+                if np.sum(sub_mask) < 10:  # Skip tiny objects
+                    continue
+                
+                annotation = self._create_sub_mask_annotation(sub_mask, image_id, int(class_id), annotation_id)
+                if annotation:
+                    coco_annotations.append(annotation)
+                    annotation_id += 1
+                    
+        return image_info, coco_annotations
+
+    def _create_sub_mask_annotation(self, sub_mask: np.ndarray, image_id: int, category_id: int, annotation_id: int) -> Dict[str, Any]:
+        """
+        Creates a COCO annotation for a single sub-mask.
+        """
+        padded_mask = np.pad(sub_mask, pad_width=1, mode='constant', constant_values=0)
+        contours = measure.find_contours(padded_mask, 0.5)
+        
+        segmentations = []
+        polygons = []
+
+        for contour in contours:
+            contour = np.array([(col - 1, row - 1) for row, col in contour])
+            poly = Polygon(contour)
+            if not poly.is_valid or poly.is_empty:
+                continue
+            
+            if not poly.is_valid or poly.is_empty:
+                continue
+
+            polygons.append(poly)
+            segmentation = np.array(poly.exterior.coords).ravel().tolist()
+            if len(segmentation) >= 6:
+                segmentations.append(segmentation)
+
+        if not polygons:
+            return None
+
+        multi_poly = MultiPolygon(polygons)
+        x, y, max_x, max_y = multi_poly.bounds
+        width = max_x - x
+        height = max_y - y
+        bbox = [x, y, width, height]
+        area = multi_poly.area
+
+        return {
+            'segmentation': segmentations,
+            'iscrowd': 0,
+            'image_id': image_id,
+            'category_id': category_id,
+            'id': annotation_id,
+            'bbox': bbox,
+            'area': area
+        }
+
+    def _save_annotations(self, output_file: str):
+        """
+        Saves the COCO data to a JSON file.
+        """
+        with open(output_file, 'w') as f:
+            json.dump(self.coco_data, f, indent=2)
