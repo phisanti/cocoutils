@@ -2,10 +2,10 @@ import typer
 from typing_extensions import Annotated
 import os
 
-from .convert.core import CocoConverter
-from .reconstruct.core import CocoReconstructor
-from .merge.core import CocoMerger
-from .visualise.core import CocoVisualizer
+from .convert import CocoConverter
+from .reconstruct import CocoReconstructor
+from .merge import CocoMerger
+from .visualise import CocoVisualizer
 import matplotlib.pyplot as plt
 
 app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, merging, and visualisation.")
