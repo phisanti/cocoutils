@@ -1,0 +1,23 @@
+
+# How to use the implementation plan
+
+This plan acts as persistent memory between your sessions, eliminating the "where was I?" problem:
+
+- Check it at session start to understand previous work
+- Review decisions, blockers, and next tasks
+- Maintain continuity across sessions
+- Update it as you work rather than trying to remember at the end
+- Update issue status when starting work
+- Create sub-tasks when discovering new requirements
+- Document blockers immediately
+- Add code snippets and architectural decisions as comments
+
+**Step 1.1: Title**
+
+- **Task**: One line description
+- **Context**: files and functions relevants to haave the information to complete the step.
+- **Actions**:
+- **Test**: A small simple unit test that can be integrated into the tests/testthat corpus
+- **Status**: Not Started
+  **Documentation:**
+  Here you link to websites with documentation that the agent can use if it get stuck
