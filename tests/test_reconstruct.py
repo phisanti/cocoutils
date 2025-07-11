@@ -3,8 +3,8 @@ import tempfile
 import tifffile
 import json
 import os
-from cocoutils.convert.core import CocoConverter
-from cocoutils.reconstruct.core import CocoReconstructor
+from cocoutils.convert import CocoConverter
+from cocoutils.reconstruct import CocoReconstructor
 
 def test_simple_reconstruct():
     with tempfile.TemporaryDirectory() as d:

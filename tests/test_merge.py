@@ -1,9 +1,9 @@
 import json
 import tempfile
 import os
-from cocoutils.merge.core import CocoMerger
+from cocoutils.merge import CocoMerger
 
-def create_dummy_coco(path, images, annotations, categories):
+def create_coco(path, images, annotations, categories):
     with open(path, 'w') as f:
         json.dump({
             "images": images,
@@ -20,13 +20,13 @@ def test_simple_merge():
         coco1_path = os.path.join(d, "coco1.json")
         images1 = [{"id": 1, "file_name": "img1.tif", "width": 10, "height": 10}]
         annotations1 = [{"id": 1, "image_id": 1, "category_id": 1, "segmentation": [[0,0,5,5,0,5]]}]
-        create_dummy_coco(coco1_path, images1, annotations1, cats)
+        create_coco(coco1_path, images1, annotations1, cats)
 
         # Create second dummy COCO file
         coco2_path = os.path.join(d, "coco2.json")
         images2 = [{"id": 1, "file_name": "img2.tif", "width": 10, "height": 10}]
         annotations2 = [{"id": 1, "image_id": 1, "category_id": 1, "segmentation": [[1,1,6,6,1,6]]}]
-        create_dummy_coco(coco2_path, images2, annotations2, cats)
+        create_coco(coco2_path, images2, annotations2, cats)
 
         # Merge the files
         merged_path = os.path.join(d, "merged.json")
@@ -59,10 +59,10 @@ def test_merge_with_category_mismatch():
         cats2 = [{"id": 1, "name": "obj2"}]
         
         coco1_path = os.path.join(d, "coco1.json")
-        create_dummy_coco(coco1_path, [], [], cats1)
+        create_coco(coco1_path, [], [], cats1)
         
         coco2_path = os.path.join(d, "coco2.json")
-        create_dummy_coco(coco2_path, [], [], cats2)
+        create_coco(coco2_path, [], [], cats2)
         
         merger = CocoMerger()
         try:
@@ -77,10 +77,10 @@ def test_merge_with_id_mismatch():
         cats2 = [{"id": 2, "name": "obj"}]
         
         coco1_path = os.path.join(d, "coco1.json")
-        create_dummy_coco(coco1_path, [], [], cats1)
+        create_coco(coco1_path, [], [], cats1)
         
         coco2_path = os.path.join(d, "coco2.json")
-        create_dummy_coco(coco2_path, [], [], cats2)
+        create_coco(coco2_path, [], [], cats2)
         
         merger = CocoMerger()
         try:

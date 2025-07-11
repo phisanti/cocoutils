@@ -3,7 +3,7 @@ import tempfile
 import tifffile
 import json
 import os
-from cocoutils.convert.core import CocoConverter
+from cocoutils.convert import CocoConverter
 from cocoutils.utils.categories import CategoryManager
 
 def test_simple_convert():

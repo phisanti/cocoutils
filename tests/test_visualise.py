@@ -3,10 +3,10 @@ import tempfile
 import os
 import json
 from PIL import Image
-from cocoutils.visualise.core import CocoVisualizer
+from cocoutils.visualise import CocoVisualizer
 import matplotlib.pyplot as plt
 
-def create_dummy_coco(path, images, annotations, categories):
+def create_coco(path, images, annotations, categories):
     with open(path, 'w') as f:
         json.dump({
             "images": images,
@@ -36,7 +36,7 @@ def test_visualizer_runs():
             "iscrowd": 0
         }]
         categories = [{"id": 1, "name": "red_square"}]
-        create_dummy_coco(coco_path, images, annotations, categories)
+        create_coco(coco_path, images, annotations, categories)
 
         # 3. Run the visualizer
         try:

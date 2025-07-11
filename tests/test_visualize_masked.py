@@ -11,7 +11,7 @@ from cocoutils.visualise import CocoVisualizer
 import matplotlib.pyplot as plt
 
 
-def create_dummy_coco(path, images, annotations, categories):
+def create_coco(path, images, annotations, categories):
     """Helper to create dummy COCO file"""
     with open(path, 'w') as f:
         json.dump({
@@ -44,7 +44,7 @@ def test_visualize_annotations_masked():
             "iscrowd": 0
         }]
         categories = [{"id": 1, "name": "red_square"}]
-        create_dummy_coco(coco_path, images, annotations, categories)
+        create_coco(coco_path, images, annotations, categories)
 
         # 3. Test the masked visualization
         try:
@@ -95,7 +95,7 @@ def test_visualize_annotations_masked_no_annotations():
         img.save(img_path)
 
         coco_path = os.path.join(d, "coco.json")
-        create_dummy_coco(coco_path, 
+        create_coco(coco_path, 
                          [{"id": 1, "file_name": "test_img.png", "width": 20, "height": 20}],
                          [], 
                          [])
