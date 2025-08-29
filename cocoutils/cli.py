@@ -6,6 +6,7 @@ from .convert import CocoConverter
 from .reconstruct import CocoReconstructor
 from .merge import CocoMerger
 from .visualise import CocoVisualizer
+from .split import CocoSplitter
 import matplotlib.pyplot as plt
 
 app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, merging, and visualisation.")
@@ -14,14 +15,18 @@ app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, me
 def convert(
     input_dir: Annotated[str, typer.Option("--input-dir", "-i", help="Path to directory containing classified object TIFF images")],
     output_file: Annotated[str, typer.Option("--output-file", "-o", help="Path to save the COCO annotations JSON file")],
-    categories: Annotated[str, typer.Option("--categories", "-c", help="Path to the categories JSON file")]
+    categories: Annotated[str, typer.Option("--categories", "-c", help="Path to the categories JSON file")],
+    per_file: Annotated[bool, typer.Option("--per-file", "-p", 
+                                            help="Create separate COCO file for each image (e.g., output.json -> output_image1.json, output_image2.json)")] = False
 ):
     """
     Converts segmentation masks to COCO format.
+    
+    If --per-file is set, creates a separate COCO JSON file for each image, appending the image name to the output file stem.
     """
-    print(f"Converting masks from '{input_dir}' to COCO format at '{output_file}'...")
+    print(f"Converting masks from '{input_dir}' to COCO format at '{output_file}' (per-file: {per_file})...")
     converter = CocoConverter(categories_path=categories)
-    converter.from_masks(input_dir=input_dir, output_file=output_file)
+    converter.from_masks(input_dir=input_dir, output_file=output_file, per_file=per_file)
     print("Conversion complete.")
 
 @app.command()
@@ -110,6 +115,38 @@ def visualise(
         
         plt.tight_layout()
         plt.show()
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+@app.command()
+def split(
+    input_file: Annotated[str, typer.Option("--input-file", "-i", help="Path to COCO annotations JSON file to split")],
+    output_dir: Annotated[str, typer.Option("--output-dir", "-o", help="Directory to save individual COCO files")],
+    naming_pattern: Annotated[str, typer.Option("--naming-pattern", "-n", help="Naming pattern for output files. Variables: {image_name}, {image_id}")] = "{image_name}",
+    by_categories: Annotated[bool, typer.Option("--by-categories", "-c", help="Split by category combinations instead of just by image")] = False
+):
+    """
+    Splits a COCO annotation file into separate files, one per image.
+    """
+    print(f"Splitting COCO file '{input_file}' into individual files in '{output_dir}'...")
+    try:
+        splitter = CocoSplitter()
+        
+        if by_categories:
+            # Use category-based splitting with modified naming pattern
+            if naming_pattern == "{image_name}":  # Default pattern
+                naming_pattern = "{image_name}_cat_{category_names}"
+            created_files = splitter.split_by_categories(input_file, output_dir, naming_pattern)
+        else:
+            created_files = splitter.split_file(input_file, output_dir, naming_pattern)
+        
+        print(f"Successfully created {len(created_files)} COCO files:")
+        for file_path in created_files[:5]:  # Show first 5
+            print(f"  - {os.path.basename(file_path)}")
+        if len(created_files) > 5:
+            print(f"  ... and {len(created_files) - 5} more files")
+            
     except (ValueError, FileNotFoundError) as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)

@@ -27,6 +27,84 @@ class CocoConverter:
         self.category_manager = CategoryManager(categories_path)
         self.coco_data = self._initialize_coco_structure()
 
+    def from_masks(self, input_dir: str, output_file: str, per_file: bool = False):
+        """
+        Converts segmentation masks from a directory to COCO JSON file(s).
+
+        Args:
+            input_dir (str): Path to the directory containing TIFF masks.
+            output_file (str): Path to save the output COCO JSON file.
+            per_file (bool): If True, create a separate COCO JSON file for each image.
+        """
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
+        tiff_files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(('.tif', '.tiff'))])
+        if not tiff_files:
+            print(f"No TIFF files found in {input_dir}")
+            return
+
+        if per_file:
+            self._process_per_file(input_dir, output_file, tiff_files)
+            print(f"Processed {len(tiff_files)} images (per-file mode).")
+        else:
+            self._process_single_file(input_dir, output_file, tiff_files)
+
+    def _process_single_file(self, input_dir: str, output_file: str, tiff_files: List[str]):
+        """
+        Processes all TIFF files and writes a single consolidated COCO JSON file.
+
+        Args:
+            input_dir (str): Directory containing TIFF mask images.
+            output_file (str): Output COCO JSON file.
+            tiff_files (List[str]): List of TIFF filenames to process.
+        
+        Creates files named: {output_stem}_{image_stem}.json
+        """
+        annotation_id = 1
+        for image_id, tiff_file in enumerate(tqdm(tiff_files, desc="Processing images"), 1):
+            file_path = os.path.join(input_dir, tiff_file)
+            try:
+                img = load_tiff(file_path)
+                image_info, coco_annotations = self._process_image(img, image_id, tiff_file, annotation_id)
+                if image_info:
+                    self.coco_data["images"].append(image_info)
+                if coco_annotations:
+                    self.coco_data["annotations"].extend(coco_annotations)
+                    annotation_id += len(coco_annotations)
+            except Exception as e:
+                print(f"Error processing {tiff_file}: {e}")
+        self._save_annotations(output_file)
+        print(f"Processed {len(tiff_files)} images with {annotation_id - 1} annotations.")
+        print(f"COCO annotations saved to {output_file}")
+    def _process_per_file(self, input_dir: str, output_file: str, tiff_files: List[str]):
+        """
+        Processes each TIFF file in input_dir and writes a separate COCO JSON file for each image.
+
+        Args:
+            input_dir (str): Directory containing TIFF mask images.
+            output_file (str): Output file pattern (used for stem).
+            tiff_files (List[str]): List of TIFF filenames to process.
+        """
+        for tiff_file in tqdm(tiff_files, desc="Processing images (per-file)"):
+            file_path = os.path.join(input_dir, tiff_file)
+            try:
+                img = load_tiff(file_path)
+                self.coco_data = self._initialize_coco_structure()
+                image_info, coco_annotations = self._process_image(img, 1, tiff_file, 1)
+                if image_info:
+                    self.coco_data["images"].append(image_info)
+                if coco_annotations:
+                    self.coco_data["annotations"].extend(coco_annotations)
+                stem = Path(output_file).stem
+                out_file = os.path.join(
+                    os.path.dirname(output_file),
+                    f"{stem}_{Path(tiff_file).stem}.json"
+                )
+                self._save_annotations(out_file)
+                print(f"COCO annotations saved to {out_file}")
+            except Exception as e:
+                print(f"Error processing {tiff_file}: {e}")
+
+
     def _initialize_coco_structure(self) -> Dict[str, Any]:
         """
         Initializes the basic COCO data structure.
@@ -45,42 +123,6 @@ class CocoConverter:
             "annotations": [],
             "categories": self.category_manager.categories
         }
-
-    def from_masks(self, input_dir: str, output_file: str):
-        """
-        Converts segmentation masks from a directory to a COCO JSON file.
-
-        Args:
-            input_dir (str): Path to the directory containing TIFF masks.
-            output_file (str): Path to save the output COCO JSON file.
-        """
-        os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        
-        tiff_files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(('.tif', '.tiff'))])
-        
-        if not tiff_files:
-            print(f"No TIFF files found in {input_dir}")
-            return
-
-        annotation_id = 1
-        for image_id, tiff_file in enumerate(tqdm(tiff_files, desc="Processing images"), 1):
-            file_path = os.path.join(input_dir, tiff_file)
-            try:
-                img = load_tiff(file_path)
-                image_info, coco_annotations = self._process_image(img, image_id, tiff_file, annotation_id)
-                
-                if image_info:
-                    self.coco_data["images"].append(image_info)
-                if coco_annotations:
-                    self.coco_data["annotations"].extend(coco_annotations)
-                    annotation_id += len(coco_annotations)
-                    
-            except Exception as e:
-                print(f"Error processing {tiff_file}: {e}")
-
-        self._save_annotations(output_file)
-        print(f"Processed {len(tiff_files)} images with {annotation_id - 1} annotations.")
-        print(f"COCO annotations saved to {output_file}")
 
     def _process_image(self, img: np.ndarray, image_id: int, tiff_file: str, start_annotation_id: int) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
