@@ -2,7 +2,7 @@
 
 A toolkit for working with COCO annotations.
 
-`cocoutils` is a Python library and command-line tool for converting segmentation masks to COCO format, reconstructing masks from COCO annotations, merging multiple COCO annotation files, and visualizing annotations.
+`cocoutils` is a Python library and command-line tool for converting segmentation masks to COCO format, reconstructing masks from COCO annotations, merging multiple COCO annotation files, splitting COCO files into individual per-image files, and visualizing annotations.
 
 ## Overview
 
@@ -13,6 +13,7 @@ This project provides a set of tools for working with COCO annotations. It is de
 - **Convert**: Convert segmentation masks (in TIFF format) to COCO JSON format.
 - **Reconstruct**: Reconstruct segmentation masks from a COCO JSON file.
 - **Merge**: Merge two COCO annotation files into a single file.
+- **Split**: Split a combined COCO file into individual files, one per image.
 - **Visualise**: Visualize COCO annotations on an image.
 
 ## Installation
@@ -34,6 +35,7 @@ A toolkit for working with COCO annotations.
 * converting segmentation masks **(TIFF)** to COCO JSON  
 * reconstructing masks from COCO JSON  
 * merging multiple COCO files  
+* splitting combined COCO files into individual per-image files
 * visualising annotations (regular view or background-masked view)
 
 ---
@@ -86,6 +88,29 @@ cocoutils merge \
   --output-file /path/to/merged.json
 ```
 
+### `split`
+
+Split a combined COCO file into individual files, one per image.
+
+```bash
+# Basic split - one file per image
+cocoutils split \
+  --input-file  /path/to/combined.json \
+  --output-dir  /path/to/split-files
+
+# Custom naming pattern
+cocoutils split \
+  --input-file      /path/to/combined.json \
+  --output-dir      /path/to/split-files \
+  --naming-pattern  "img_{image_id}_{image_name}"
+
+# Include category information in filenames
+cocoutils split \
+  --input-file   /path/to/combined.json \
+  --output-dir   /path/to/split-files \
+  --by-categories
+```
+
 ### `visualise`
 
 Draw annotations on top of an image (with optional masked view).
@@ -112,6 +137,7 @@ cocoutils visualise \
 from cocoutils.convert   import CocoConverter
 from cocoutils.reconstruct import CocoReconstructor
 from cocoutils.merge     import CocoMerger
+from cocoutils.split     import CocoSplitter
 from cocoutils.visualise import CocoVisualizer
 
 # Convert
@@ -125,6 +151,10 @@ reconstructor.from_coco("annotations.json", "reconstructed_masks", workers=4)
 # Merge
 merger = CocoMerger()
 merger.merge_files("a.json", "b.json", "merged.json")
+
+# Split
+splitter = CocoSplitter()
+splitter.split_file("combined.json", "split_output")
 
 # Visualise
 viz = CocoVisualizer("annotations.json")
