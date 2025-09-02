@@ -2,34 +2,6 @@
 
 A toolkit for working with COCO annotations.
 
-`cocoutils` is a Python library and command-line tool for converting segmentation masks to COCO format, reconstructing masks from COCO annotations, merging multiple COCO annotation files, splitting COCO files into individual per-image files, and visualizing annotations.
-
-## Overview
-
-This project provides a set of tools for working with COCO annotations. It is designed to be a flexible and easy-to-use solution for common COCO-related tasks. The project is structured as a Python package with a modular design, allowing you to use the components you need.
-
-## Current Capabilities
-
-- **Convert**: Convert segmentation masks (in TIFF format) to COCO JSON format.
-- **Reconstruct**: Reconstruct segmentation masks from a COCO JSON file.
-- **Merge**: Merge two COCO annotation files into a single file.
-- **Split**: Split a combined COCO file into individual files, one per image.
-- **Visualise**: Visualize COCO annotations on an image.
-
-## Installation
-
-To install the package, clone the repository and install it in editable mode using pip:
-
-```bash
-git clone https://github.com/phisanti/cocoutils
-cd cocoutils
-pip install -e .
-```
-
-# cocoutils
-
-A toolkit for working with COCO annotations.
-
 `cocoutils` is a Python library **and** command-line tool for
 
 * converting segmentation masks **(TIFF)** to COCO JSON  
@@ -43,7 +15,7 @@ A toolkit for working with COCO annotations.
 ## Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/phisanti/cocoutils
 cd cocoutils
 pip install -e .
 ```
