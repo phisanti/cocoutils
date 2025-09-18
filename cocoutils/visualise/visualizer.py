@@ -7,6 +7,7 @@ from matplotlib.patches import Polygon as MplPolygon
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch
 from pycocotools.coco import COCO
+from pycocotools import mask as mask_utils
 from PIL import Image
 import torch
 from typing import List, Optional, Tuple, Union
@@ -42,7 +43,8 @@ class CocoVisualizer:
         show_bboxes: bool = True,
         show_class_names: bool = True,
         crop_coords: Optional[Tuple[int, int, int, int]] = None,
-        ax: Optional[plt.Axes] = None
+        ax: Optional[plt.Axes] = None,
+        plot_engine: str = 'mpl'
     ):
         """
         Visualizes annotations for a given image.
@@ -59,6 +61,7 @@ class CocoVisualizer:
             crop_coords (Tuple, optional): (x0, y0, x1, y1) coordinates to crop the view.
             ax (plt.Axes, optional): A matplotlib axes object to plot on. If None, a new
                                      figure and axes are created.
+            plot_engine (str): 'mpl' (default, reliable) or 'rle' (experimental, fast but has issues).
         """
         if image_id is None:
             # Infer image_id from filename
@@ -88,7 +91,7 @@ class CocoVisualizer:
                 self._plot_bbox(ax, ann['bbox'], color)
             
             if show_masks and 'segmentation' in ann:
-                self._plot_segmentation(ax, ann['segmentation'], color)
+                self._plot_segmentation(ax, ann['segmentation'], color, plot_engine)
 
             if show_class_names and 'category_id' in ann:
                 cat_name = self.coco.loadCats([ann['category_id']])[0]['name']
@@ -104,58 +107,22 @@ class CocoVisualizer:
         rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor=color, facecolor='none')
         ax.add_patch(rect)
 
-    def _plot_segmentation(self, ax: plt.Axes, segmentation: List[List[float]], color):
+    def _plot_segmentation(self, ax: plt.Axes, segmentation: List[List[float]], color, plot_engine: str = 'mpl'):
         """
-        Plot segmentation polygons with proper hole handling using matplotlib Path objects.
-        Creates a single filled polygon with holes properly cut out.
+        Master method to plot segmentation polygons with proper hole handling.
+        
+        Args:
+            ax: Matplotlib axes to plot on
+            segmentation: List of polygon segments  
+            color: Color for the polygons
+            plot_engine: 'mpl' (default, reliable) or 'rle' (experimental, fast for many objects)
         """
-        if not segmentation:
-            return
-            
-        # Separate positive areas from holes based on orientation
-        positive_polygons = []
-        hole_polygons = []
-        
-        for seg in segmentation:
-            orientation = determine_polygon_orientation(seg)
-            poly_coords = np.array(seg).reshape((-1, 2))
-            
-            if orientation == 1:  # Positive area (clockwise)
-                positive_polygons.append(poly_coords)
-            else:  # Hole (counter-clockwise)
-                hole_polygons.append(poly_coords)
-        
-        # Create a single path with all positive polygons and holes
-        if positive_polygons:
-            if hole_polygons:
-                # Create a path with holes
-                vertices = []
-                codes = []
-                
-                # Add all positive polygons
-                for pos_poly in positive_polygons:
-                    vertices.extend(pos_poly)
-                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(pos_poly) - 1))
-                
-                # Add all holes
-                for hole_poly in hole_polygons:
-                    vertices.extend(hole_poly)
-                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(hole_poly) - 1))
-                
-                # Create path and patch with proper fill rule for holes
-                path = Path(vertices, codes)
-                patch = PathPatch(path, facecolor=color, alpha=0.4, edgecolor=color, linewidth=2)
-                patch.set_path_effects([])  # Ensure proper hole rendering
-                ax.add_patch(patch)
-            else:
-                # No holes, simple filled polygons
-                for pos_poly in positive_polygons:
-                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=True, color=color, alpha=0.4))
-                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=False, edgecolor=color, linewidth=2))
+        if plot_engine == 'rle':
+            self._plot_segmentation_rle(ax, segmentation, color)
+        elif plot_engine == 'mpl':
+            self._plot_segmentation_mpl(ax, segmentation, color)
         else:
-            # Only holes present (unusual case) - show as dashed outlines
-            for hole_poly in hole_polygons:
-                ax.add_patch(MplPolygon(hole_poly, closed=True, fill=False, edgecolor=color, linewidth=2, linestyle='--'))
+            raise ValueError(f"Unknown plot_engine: {plot_engine}. Use 'rle' or 'mpl'.")
 
     def visualize_annotations_masked(self, image: np.ndarray, annotation_ids: Union[int, List[int]], 
                                    ax: Optional[plt.Axes] = None, show: bool = True) -> Optional[plt.Axes]:
@@ -241,3 +208,124 @@ class CocoVisualizer:
             plt.show()
             
         return ax if return_ax else None
+
+    # Auxiliary methods for different plotting engines
+    
+    def _plot_segmentation_mpl(self, ax: plt.Axes, segmentation: List[List[float]], color):
+        """
+        Plot segmentation polygons using matplotlib Path objects (good for few objects).
+        Creates a single filled polygon with holes properly cut out using Path objects.
+        """
+        if not segmentation:
+            return
+            
+        # Separate positive areas from holes based on orientation
+        positive_polygons = []
+        hole_polygons = []
+        
+        for seg in segmentation:
+            orientation = determine_polygon_orientation(seg)
+            poly_coords = np.array(seg).reshape((-1, 2))
+            
+            if orientation == 1:  # Positive area (clockwise)
+                positive_polygons.append(poly_coords)
+            else:  # Hole (counter-clockwise)
+                hole_polygons.append(poly_coords)
+        
+        # Create a single path with all positive polygons and holes
+        if positive_polygons:
+            if hole_polygons:
+                # Create a path with holes
+                vertices = []
+                codes = []
+                
+                # Add all positive polygons
+                for pos_poly in positive_polygons:
+                    vertices.extend(pos_poly)
+                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(pos_poly) - 1))
+                
+                # Add all holes
+                for hole_poly in hole_polygons:
+                    vertices.extend(hole_poly)
+                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(hole_poly) - 1))
+                
+                # Create path and patch with proper fill rule for holes
+                path = Path(vertices, codes)
+                patch = PathPatch(path, facecolor=color, alpha=0.4, edgecolor=color, linewidth=2)
+                patch.set_path_effects([])  # Ensure proper hole rendering
+                ax.add_patch(patch)
+            else:
+                # No holes, simple filled polygons
+                for pos_poly in positive_polygons:
+                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=True, color=color, alpha=0.4))
+                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=False, edgecolor=color, linewidth=2))
+        else:
+            # Only holes present (unusual case) - show as dashed outlines
+            for hole_poly in hole_polygons:
+                ax.add_patch(MplPolygon(hole_poly, closed=True, fill=False, edgecolor=color, linewidth=2, linestyle='--'))
+
+    def _plot_segmentation_rle(self, ax: plt.Axes, segmentation: List[List[float]], color):
+        """
+        Plot segmentation polygons using RLE-based approach (fast for many objects).
+        
+        # TODO: This method is in development. RLE is highly efficient for rastering but 
+        # currently it has issues with cropping only a single object instead of showing 
+        # the whole image or it has bugs calculating the coordinate maps which places 
+        # the mask on the wrong side.
+        """
+        if not segmentation:
+            return
+            
+        # This is called per annotation, so we need image dimensions and bbox from context
+        # We'll simulate the bbox approach by getting extent from the polygons themselves
+        all_coords = []
+        for seg in segmentation:
+            coords = np.array(seg).reshape(-1, 2)
+            all_coords.extend(coords)
+        
+        if not all_coords:
+            return
+            
+        all_coords = np.array(all_coords)
+        min_x, min_y = np.min(all_coords, axis=0)
+        max_x, max_y = np.max(all_coords, axis=0)
+        
+        # Create bbox with some padding
+        padding = 5
+        x = max(0, int(min_x - padding))
+        y = max(0, int(min_y - padding))
+        w = int(max_x - min_x + 2 * padding)
+        h = int(max_y - min_y + 2 * padding)
+        
+        # Get reasonable image dimensions (use larger bbox area)
+        img_width = max(512, x + w + 50)
+        img_height = max(512, y + h + 50)
+        
+        # Use create_segmentation_mask exactly like the original
+        full_mask = create_segmentation_mask(
+            segmentation,
+            None,  # Let it infer from orientation
+            img_height,
+            img_width
+        )
+        
+        if full_mask is not None:
+            # Crop mask to bbox (exactly like original)
+            mask = full_mask[y:y+h, x:x+w]
+            
+            # Convert to RGBA for visualization
+            rgba_mask = np.zeros((h, w, 4))
+            
+            # Handle different color formats
+            if isinstance(color, str):
+                import matplotlib.colors as mcolors
+                rgb_color = mcolors.to_rgb(color)
+            else:
+                rgb_color = color[:3] if len(color) >= 3 else color
+            
+            # Apply color where mask is positive
+            rgba_mask[mask > 0] = [*rgb_color, 0.4]
+            
+            # Display with correct extent (key fix: proper coordinate mapping)
+            ax.imshow(rgba_mask, extent=[x, x+w, y+h, y], 
+                     aspect='auto', interpolation='nearest', alpha=0.8)
