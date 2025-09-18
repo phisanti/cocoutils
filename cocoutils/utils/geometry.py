@@ -1,8 +1,10 @@
 from pycocotools import mask as mask_utils
 from typing import List
 import torch
+import numpy as np
 from shapely.geometry import Polygon
 from shapely.ops import unary_union
+from skimage import measure
 
 def determine_polygon_orientation(polygon: List[float]) -> int:
     """
@@ -123,3 +125,132 @@ def bbox_from_polygons(polygons: List[Polygon]) -> List[float]:
     height = max(0.0, maxy - miny)
     
     return [float(minx), float(miny), float(width), float(height)]
+
+
+def extract_polygon_segments(mask) -> List[List[float]]:
+    """
+    Extract polygon segments from a binary mask with proper clockwise orientation.
+    
+    This is the core polygon extraction logic that should be used consistently
+    across all COCO annotation creation methods.
+    
+    Args:
+        mask: Binary mask (2D array) representing a single object or component
+        
+    Returns:
+        List of polygon segments as flat coordinate lists [x1, y1, x2, y2, ...]
+        Each segment is guaranteed to have clockwise orientation for positive areas.
+    """
+    if np.sum(mask) < 10:  # Skip tiny objects
+        return []
+    
+    # Add padding around mask to handle border objects
+    padded_mask = np.pad(mask, pad_width=1, mode='constant', constant_values=0)
+    
+    # Find contours using scikit-image
+    contours = measure.find_contours(padded_mask, 0.5)
+    
+    segments = []
+    
+    for contour in contours:
+        # Convert from (row, col) to (x, y) and subtract padding
+        points = [(col - 1, row - 1) for row, col in contour]
+        
+        if len(points) < 3:
+            continue
+            
+        try:
+            poly = Polygon(points)
+            if not poly.is_valid or poly.is_empty:
+                continue
+                
+            # Simplify polygon but preserve topology
+            poly = poly.simplify(1.0, preserve_topology=True)
+            if poly.is_empty or not poly.is_valid:
+                continue
+            
+            # Extract coordinates
+            coords = np.array(poly.exterior.coords).ravel().tolist()
+            if len(coords) >= 6:  # At least 3 points
+                segments.append(coords)
+                
+        except Exception:
+            continue
+    
+    return segments
+
+
+def extract_bbox_from_segments(segments: List[List[float]]) -> List[float]:
+    """
+    Extract bounding box from polygon segments.
+    
+    Optimized implementation using numpy operations for better performance.
+    
+    Args:
+        segments: List of polygon segments as flat coordinate lists
+        
+    Returns:
+        Bounding box as [x, y, width, height]
+    """
+    if not segments:
+        return [0.0, 0.0, 0.0, 0.0]
+    
+    # Collect all coordinates using numpy for efficient processing
+    all_coords = []
+    for seg in segments:
+        if len(seg) >= 6:  # At least 3 points
+            try:
+                coords = np.array(seg).reshape(-1, 2)
+                all_coords.append(coords)
+            except (ValueError, TypeError):
+                continue
+    
+    if not all_coords:
+        return [0.0, 0.0, 0.0, 0.0]
+    
+    # Combine all coordinates and find bounds
+    try:
+        combined = np.vstack(all_coords)
+        minx, miny = np.min(combined, axis=0)
+        maxx, maxy = np.max(combined, axis=0)
+        
+        width = max(0.0, float(maxx - minx))
+        height = max(0.0, float(maxy - miny))
+        
+        return [float(minx), float(miny), float(width), float(height)]
+    except (ValueError, TypeError):
+        return [0.0, 0.0, 0.0, 0.0]
+
+
+def extract_area_from_segments(segments: List[List[float]]) -> float:
+    """
+    Extract total area from polygon segments.
+    
+    Optimized implementation using numpy-based shoelace formula for better performance.
+    
+    Args:
+        segments: List of polygon segments as flat coordinate lists
+        
+    Returns:
+        Total area of all segments combined
+    """
+    if not segments:
+        return 0.0
+    
+    total_area = 0.0
+    for seg in segments:
+        if len(seg) >= 6:  # At least 3 points
+            try:
+                coords = np.array(seg).reshape(-1, 2)
+                x = coords[:, 0]
+                y = coords[:, 1]
+                
+                # Shoelace formula for polygon area
+                # Area = 0.5 * |sum(x[i] * y[i+1] - x[i+1] * y[i])|
+                area = 0.5 * abs(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]) + 
+                                (x[-1] * y[0] - x[0] * y[-1]))
+                total_area += area
+            except (ValueError, TypeError, IndexError):
+                continue
+    
+    return float(total_area)

@@ -9,7 +9,7 @@ from shapely.geometry import Polygon, MultiPolygon
 from typing import List, Dict, Any, Tuple
 
 from ..utils.categories import CategoryManager
-from ..utils.geometry import create_segmentation_mask, bbox_from_polygons
+from ..utils.geometry import create_segmentation_mask, bbox_from_polygons, extract_polygon_segments, extract_bbox_from_segments, extract_area_from_segments
 from ..utils.io import save_coco, load_tiff
 
 class CocoConverter:
@@ -27,20 +27,32 @@ class CocoConverter:
         self.category_manager = CategoryManager(categories_path)
         self.coco_data = self._initialize_coco_structure()
 
-    def from_masks(self, input_dir: str, output_file: str, per_file: bool = False):
+    def from_masks(self, input_path: str, output_file: str, per_file: bool = False):
         """
-        Converts segmentation masks from a directory to COCO JSON file(s).
+        Converts segmentation masks from a file or directory to COCO JSON file(s).
 
         Args:
-            input_dir (str): Path to the directory containing TIFF masks.
+            input_path (str): Path to a TIFF file or directory containing TIFF masks.
             output_file (str): Path to save the output COCO JSON file.
             per_file (bool): If True, create a separate COCO JSON file for each image.
         """
         os.makedirs(os.path.dirname(output_file), exist_ok=True)
-        tiff_files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(('.tif', '.tiff'))])
-        if not tiff_files:
-            print(f"No TIFF files found in {input_dir}")
-            return
+        
+        # Check if input is a single file or directory
+        if os.path.isfile(input_path):
+            # Single file processing
+            if not input_path.lower().endswith(('.tif', '.tiff')):
+                print(f"Error: {input_path} is not a TIFF file")
+                return
+            input_dir = os.path.dirname(input_path)
+            tiff_files = [os.path.basename(input_path)]
+        else:
+            # Directory processing
+            input_dir = input_path
+            tiff_files = sorted([f for f in os.listdir(input_dir) if f.lower().endswith(('.tif', '.tiff'))])
+            if not tiff_files:
+                print(f"No TIFF files found in {input_path}")
+                return
 
         if per_file:
             self._process_per_file(input_dir, output_file, tiff_files)
@@ -164,41 +176,39 @@ class CocoConverter:
 
     def _create_sub_mask_annotation(self, sub_mask: np.ndarray, image_id: int, category_id: int, annotation_id: int) -> Dict[str, Any]:
         """
-        Creates a COCO annotation for a single sub-mask.
-        """
-        padded_mask = np.pad(sub_mask, pad_width=1, mode='constant', constant_values=0)
-        contours = measure.find_contours(padded_mask, 0.5)
+        Creates a COCO annotation for a single sub-mask using the new centralized geometry functions.
         
-        segmentations = []
-        polygons = []
-
-        for contour in contours:
-            contour = np.array([(col - 1, row - 1) for row, col in contour])
-            poly = Polygon(contour)
-            if not poly.is_valid or poly.is_empty:
-                continue
+        This method combines all polygon extraction, bbox calculation, and area computation
+        into a single convenient method for COCO annotation creation.
+        
+        Args:
+            sub_mask: Binary mask (2D array) representing a single object or component
+            image_id: COCO image ID
+            category_id: COCO category ID  
+            annotation_id: Unique annotation ID
             
-            if not poly.is_valid or poly.is_empty:
-                continue
-
-            polygons.append(poly)
-            segmentation = np.array(poly.exterior.coords).ravel().tolist()
-            if len(segmentation) >= 6:
-                segmentations.append(segmentation)
-
-        if not polygons:
+        Returns:
+            COCO annotation dictionary or None if no valid polygons found
+        """
+        # Extract polygon segments using the new centralized function
+        segmentations = extract_polygon_segments(sub_mask)
+        
+        if not segmentations:
             return None
-
-        bbox = bbox_from_polygons(polygons)
-        multi_poly = MultiPolygon(polygons)
-        area = multi_poly.area
-
+        
+        # Extract bbox and area using the new centralized functions
+        bbox = extract_bbox_from_segments(segmentations)
+        area = extract_area_from_segments(segmentations)
+        
+        if area == 0.0:
+            return None
+        
         return {
             'segmentation': segmentations,
             'iscrowd': 0,
-            'image_id': image_id,
-            'category_id': category_id,
-            'id': annotation_id,
+            'image_id': int(image_id),
+            'category_id': int(category_id),
+            'id': int(annotation_id),
             'bbox': bbox,
             'area': area
         }

@@ -13,7 +13,7 @@ app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, me
 
 @app.command()
 def convert(
-    input_dir: Annotated[str, typer.Option("--input-dir", "-i", help="Path to directory containing classified object TIFF images")],
+    input_path: Annotated[str, typer.Option("--input-path", "-i", help="Path to TIFF image file or directory containing TIFF images")],
     output_file: Annotated[str, typer.Option("--output-file", "-o", help="Path to save the COCO annotations JSON file")],
     categories: Annotated[str, typer.Option("--categories", "-c", help="Path to the categories JSON file")],
     per_file: Annotated[bool, typer.Option("--per-file", "-p", 
@@ -24,9 +24,9 @@ def convert(
     
     If --per-file is set, creates a separate COCO JSON file for each image, appending the image name to the output file stem.
     """
-    print(f"Converting masks from '{input_dir}' to COCO format at '{output_file}' (per-file: {per_file})...")
+    print(f"Converting masks from '{input_path}' to COCO format at '{output_file}' (per-file: {per_file})...")
     converter = CocoConverter(categories_path=categories)
-    converter.from_masks(input_dir=input_dir, output_file=output_file, per_file=per_file)
+    converter.from_masks(input_path=input_path, output_file=output_file, per_file=per_file)
     print("Conversion complete.")
 
 @app.command()
