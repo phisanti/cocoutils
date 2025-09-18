@@ -17,15 +17,16 @@ def convert(
     output_file: Annotated[str, typer.Option("--output-file", "-o", help="Path to save the COCO annotations JSON file")],
     categories: Annotated[str, typer.Option("--categories", "-c", help="Path to the categories JSON file")],
     per_file: Annotated[bool, typer.Option("--per-file", "-p", 
-                                            help="Create separate COCO file for each image (e.g., output.json -> output_image1.json, output_image2.json)")] = False
+                                            help="Create separate COCO file for each image (e.g., output.json -> output_image1.json, output_image2.json)")] = False,
+    ncores: Annotated[int, typer.Option("--ncores", "-n", help="Number of CPU cores for parallel object processing")] = None
 ):
     """
     Converts segmentation masks to COCO format.
     
     If --per-file is set, creates a separate COCO JSON file for each image, appending the image name to the output file stem.
     """
-    print(f"Converting masks from '{input_path}' to COCO format at '{output_file}' (per-file: {per_file})...")
-    converter = CocoConverter(categories_path=categories)
+    print(f"Converting masks from '{input_path}' to COCO format at '{output_file}' (per-file: {per_file}, cores: {ncores if ncores else 'auto'})...")
+    converter = CocoConverter(categories_path=categories, ncores=ncores)
     converter.from_masks(input_path=input_path, output_file=output_file, per_file=per_file)
     print("Conversion complete.")
 

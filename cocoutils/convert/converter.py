@@ -7,25 +7,125 @@ from scipy.ndimage import label
 from skimage import measure
 from shapely.geometry import Polygon, MultiPolygon
 from typing import List, Dict, Any, Tuple
+from multiprocessing import Pool, cpu_count
 
 from ..utils.categories import CategoryManager
-from ..utils.geometry import create_segmentation_mask, bbox_from_polygons, extract_polygon_segments, extract_bbox_from_segments, extract_area_from_segments
+from ..utils.geometry import extract_polygon_segments, extract_bbox_from_segments, extract_area_from_segments
 from ..utils.io import save_coco, load_tiff
+
+
+def _process_objects_batch_with_ids(args):
+    """
+    Worker function to process a batch of objects in parallel with pre-assigned IDs.
+    
+    Args:
+        args: Tuple containing (object_data_list, image_id)
+            where object_data_list is a list of (sub_mask, class_id, annotation_id) tuples
+    
+    Returns:
+        List of COCO annotations for the processed objects
+    """
+    object_data_list, image_id = args
+    annotations = []
+    
+    for sub_mask, class_id, annotation_id in object_data_list:
+        try:
+            from ..utils.geometry import extract_polygon_segments, extract_bbox_from_segments, extract_area_from_segments
+            
+            # Extract polygon segments
+            segmentations = extract_polygon_segments(sub_mask)
+            
+            if not segmentations:
+                continue
+            
+            # Extract bbox and area
+            bbox = extract_bbox_from_segments(segmentations)
+            area = extract_area_from_segments(segmentations)
+            
+            if area == 0.0:
+                continue
+            
+            annotation = {
+                'segmentation': segmentations,
+                'iscrowd': 0,
+                'image_id': int(image_id),
+                'category_id': int(class_id),
+                'id': int(annotation_id),
+                'bbox': bbox,
+                'area': area
+            }
+            annotations.append(annotation)
+            
+        except Exception:
+            continue
+    
+    return annotations
+
+
+def _process_objects_batch(args):
+    """
+    Legacy worker function for backward compatibility.
+    
+    Args:
+        args: Tuple containing (object_data_list, image_id, start_annotation_id)
+            where object_data_list is a list of (sub_mask, class_id) tuples
+    
+    Returns:
+        List of COCO annotations for the processed objects
+    """
+    object_data_list, image_id, start_annotation_id = args
+    annotations = []
+    
+    for i, (sub_mask, class_id) in enumerate(object_data_list):
+        annotation_id = start_annotation_id + i
+        try:
+            from ..utils.geometry import extract_polygon_segments, extract_bbox_from_segments, extract_area_from_segments
+            
+            # Extract polygon segments
+            segmentations = extract_polygon_segments(sub_mask)
+            
+            if not segmentations:
+                continue
+            
+            # Extract bbox and area
+            bbox = extract_bbox_from_segments(segmentations)
+            area = extract_area_from_segments(segmentations)
+            
+            if area == 0.0:
+                continue
+            
+            annotation = {
+                'segmentation': segmentations,
+                'iscrowd': 0,
+                'image_id': int(image_id),
+                'category_id': int(class_id),
+                'id': int(annotation_id),
+                'bbox': bbox,
+                'area': area
+            }
+            annotations.append(annotation)
+            
+        except Exception:
+            continue
+    
+    return annotations
 
 class CocoConverter:
     """
     Converts segmentation masks to COCO format.
     """
 
-    def __init__(self, categories_path: str):
+    def __init__(self, categories_path: str, ncores: int = None):
         """
         Initializes the CocoConverter.
 
         Args:
             categories_path (str): Path to the categories JSON file.
+            ncores (int): Number of cores for parallel processing. Defaults to half of cpu_count().
         """
         self.category_manager = CategoryManager(categories_path)
         self.coco_data = self._initialize_coco_structure()
+        self.ncores = ncores if ncores is not None else max(1, cpu_count() // 2)
 
     def from_masks(self, input_path: str, output_file: str, per_file: bool = False):
         """
@@ -138,9 +238,8 @@ class CocoConverter:
 
     def _process_image(self, img: np.ndarray, image_id: int, tiff_file: str, start_annotation_id: int) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """
-        Processes a single image to extract COCO annotations.
+        Processes a single image to extract COCO annotations using parallel processing.
         """
-        coco_annotations = []
         height, width = img.shape
         image_info = {
             "id": image_id,
@@ -154,7 +253,8 @@ class CocoConverter:
         class_ids = np.unique(img)
         class_ids = class_ids[class_ids > 0]
         
-        annotation_id = start_annotation_id
+        # Collect all objects for parallel processing
+        object_data = []
         for class_id in class_ids:
             if class_id not in self.category_manager.id_to_name:
                 continue
@@ -166,13 +266,68 @@ class CocoConverter:
                 sub_mask = (labeled_mask == obj_idx).astype(np.uint8)
                 if np.sum(sub_mask) < 10:  # Skip tiny objects
                     continue
-                
-                annotation = self._create_sub_mask_annotation(sub_mask, image_id, int(class_id), annotation_id)
-                if annotation:
-                    coco_annotations.append(annotation)
-                    annotation_id += 1
+                object_data.append((sub_mask, class_id))
+        
+        # Process objects in parallel
+        coco_annotations = self._process_objects(object_data, image_id, start_annotation_id)
                     
         return image_info, coco_annotations
+
+    def _process_objects(self, object_data: List[Tuple[np.ndarray, int]], image_id: int, start_annotation_id: int) -> List[Dict[str, Any]]:
+        """
+        Process objects using the specified number of cores.
+        
+        Args:
+            object_data: List of (sub_mask, class_id) tuples
+            image_id: Image ID for annotations
+            start_annotation_id: Starting annotation ID
+            
+        Returns:
+            List of COCO annotations
+        """
+        # Assign annotation IDs sequentially to maintain consistent ordering
+        object_data_with_ids = []
+        for i, (sub_mask, class_id) in enumerate(object_data):
+            annotation_id = start_annotation_id + i
+            object_data_with_ids.append((sub_mask, class_id, annotation_id))
+        
+        # For single core, create one batch with all objects
+        if self.ncores == 1:
+            batches = [object_data_with_ids]
+        else:
+            # Distribute objects across cores using round-robin
+            batches = [[] for _ in range(self.ncores)]
+            for i, obj_data in enumerate(object_data_with_ids):
+                core_idx = i % self.ncores
+                batches[core_idx].append(obj_data)
+        
+        # Prepare arguments for processing - now with pre-assigned IDs
+        args_list = []
+        for batch in batches:
+            if batch:  # Only process non-empty batches
+                args_list.append((batch, image_id))
+        
+        if not args_list:
+            return []
+        
+        # Process batches
+        if self.ncores == 1:
+            # Sequential processing - call worker function directly
+            results = [_process_objects_batch_with_ids(args_list[0])]
+        else:
+            # Parallel processing
+            with Pool(processes=min(self.ncores, len(args_list))) as pool:
+                results = pool.map(_process_objects_batch_with_ids, args_list)
+        
+        # Flatten results and sort by annotation ID to maintain order
+        all_annotations = []
+        for result in results:
+            all_annotations.extend(result)
+        
+        # Sort by annotation ID to maintain consistent ordering
+        all_annotations.sort(key=lambda x: x['id'])
+        
+        return all_annotations
 
     def _create_sub_mask_annotation(self, sub_mask: np.ndarray, image_id: int, category_id: int, annotation_id: int) -> Dict[str, Any]:
         """
