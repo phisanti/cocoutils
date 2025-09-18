@@ -210,7 +210,8 @@ def extract_polygon_segments(mask, reverse: bool = True) -> List[List[float]]:
                 continue
             
             # Extract coordinates
-            coords = np.array(poly.exterior.coords).ravel().tolist()
+            coords_array = np.array(poly.exterior.coords)
+            coords = coords_array.ravel().tolist()
             if len(coords) >= 6:  # At least 3 points
                 if reverse:
                     coords = reverse_orientation(coords)
@@ -252,7 +253,7 @@ def extract_bbox_from_segments(segments: List[List[float]]) -> List[float]:
     
     # Combine all coordinates and find bounds
     try:
-        combined = np.vstack(all_coords)
+        combined = np.concatenate(all_coords, axis=0)
         minx, miny = np.min(combined, axis=0)
         maxx, maxy = np.max(combined, axis=0)
         
@@ -289,20 +290,16 @@ def extract_area_from_segments(segments: List[List[float]], use_orientation: boo
                 y = coords[:, 1]
                 
                 # Shoelace formula for polygon area
-                # Area = 0.5 * |sum(x[i] * y[i+1] - x[i+1] * y[i])|
-                area = 0.5 * abs(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]) + 
-                                (x[-1] * y[0] - x[0] * y[-1]))
+                # Use signed area to avoid redundant orientation calculation
+                signed_area = 0.5 * (np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]) + 
+                                    (x[-1] * y[0] - x[0] * y[-1]))
                 
                 if use_orientation:
-                    # Determine if this is a positive area or hole
-                    orientation = determine_polygon_orientation(seg)
-                    if orientation == 1:  # Positive area (clockwise)
-                        total_area += area
-                    else:  # Hole (counter-clockwise)
-                        total_area -= area
+                    # Signed area already encodes orientation: negative=clockwise=positive, positive=ccw=hole
+                    total_area += abs(signed_area) if signed_area < 0 else -abs(signed_area)
                 else:
                     # Treat all segments as positive areas
-                    total_area += area
+                    total_area += abs(signed_area)
                     
             except (ValueError, TypeError, IndexError):
                 continue
