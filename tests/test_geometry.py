@@ -152,10 +152,29 @@ def test_extract_area_from_segments_single_square():
 
 def test_extract_area_from_segments_triangle():
     """Test extract_area_from_segments with triangle."""
+    from cocoutils.utils.geometry import reverse_orientation, determine_polygon_orientation
     # Triangle with base 10 and height 10, area = 0.5 * 10 * 10 = 50
     segment = [0.0, 0.0, 10.0, 0.0, 5.0, 10.0]
+    # Make sure triangle is clockwise for positive area
+    if determine_polygon_orientation(segment) == 0:
+        segment = reverse_orientation(segment)
     result = extract_area_from_segments([segment])
     assert abs(result - 50.0) < 1e-6
+
+
+def test_extract_area_from_segments_hole_only():
+    """Test extract_area_from_segments when only polygon is a hole (should return 0)."""
+    from cocoutils.utils.geometry import determine_polygon_orientation, reverse_orientation
+    # Create a counter-clockwise square (hole)
+    hole_segment = [0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 10.0, 0.0]
+    # Make sure it's counter-clockwise (hole)
+    if determine_polygon_orientation(hole_segment) == 1:
+        hole_segment = reverse_orientation(hole_segment)
+    assert determine_polygon_orientation(hole_segment) == 0  # Verify it's a hole
+    
+    # When only polygon is a hole, area should be 0 (clamped to non-negative)
+    result = extract_area_from_segments([hole_segment])
+    assert result == 0.0
 
 
 def test_extract_functions_integration():

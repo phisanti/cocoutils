@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patches as mpatches
 from matplotlib.patches import Polygon as MplPolygon
+from matplotlib.path import Path
+from matplotlib.patches import PathPatch
 from pycocotools.coco import COCO
 from PIL import Image
 import torch
 from typing import List, Optional, Tuple, Union
-from ..utils.geometry import create_segmentation_mask
+from ..utils.geometry import create_segmentation_mask, determine_polygon_orientation
 
 class CocoVisualizer:
     """
@@ -103,10 +105,57 @@ class CocoVisualizer:
         ax.add_patch(rect)
 
     def _plot_segmentation(self, ax: plt.Axes, segmentation: List[List[float]], color):
+        """
+        Plot segmentation polygons with proper hole handling using matplotlib Path objects.
+        Creates a single filled polygon with holes properly cut out.
+        """
+        if not segmentation:
+            return
+            
+        # Separate positive areas from holes based on orientation
+        positive_polygons = []
+        hole_polygons = []
+        
         for seg in segmentation:
-            poly = np.array(seg).reshape((-1, 2))
-            ax.add_patch(MplPolygon(poly, closed=True, fill=True, color=color, alpha=0.4))
-            ax.add_patch(MplPolygon(poly, closed=True, fill=False, edgecolor=color, linewidth=2))
+            orientation = determine_polygon_orientation(seg)
+            poly_coords = np.array(seg).reshape((-1, 2))
+            
+            if orientation == 1:  # Positive area (clockwise)
+                positive_polygons.append(poly_coords)
+            else:  # Hole (counter-clockwise)
+                hole_polygons.append(poly_coords)
+        
+        # Create a single path with all positive polygons and holes
+        if positive_polygons:
+            if hole_polygons:
+                # Create a path with holes
+                vertices = []
+                codes = []
+                
+                # Add all positive polygons
+                for pos_poly in positive_polygons:
+                    vertices.extend(pos_poly)
+                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(pos_poly) - 1))
+                
+                # Add all holes
+                for hole_poly in hole_polygons:
+                    vertices.extend(hole_poly)
+                    codes.extend([Path.MOVETO] + [Path.LINETO] * (len(hole_poly) - 1))
+                
+                # Create path and patch with proper fill rule for holes
+                path = Path(vertices, codes)
+                patch = PathPatch(path, facecolor=color, alpha=0.4, edgecolor=color, linewidth=2)
+                patch.set_path_effects([])  # Ensure proper hole rendering
+                ax.add_patch(patch)
+            else:
+                # No holes, simple filled polygons
+                for pos_poly in positive_polygons:
+                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=True, color=color, alpha=0.4))
+                    ax.add_patch(MplPolygon(pos_poly, closed=True, fill=False, edgecolor=color, linewidth=2))
+        else:
+            # Only holes present (unusual case) - show as dashed outlines
+            for hole_poly in hole_polygons:
+                ax.add_patch(MplPolygon(hole_poly, closed=True, fill=False, edgecolor=color, linewidth=2, linestyle='--'))
 
     def visualize_annotations_masked(self, image: np.ndarray, annotation_ids: Union[int, List[int]], 
                                    ax: Optional[plt.Axes] = None, show: bool = True) -> Optional[plt.Axes]:
