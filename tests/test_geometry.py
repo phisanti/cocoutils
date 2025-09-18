@@ -1,4 +1,11 @@
-from cocoutils.utils.geometry import determine_polygon_orientation, create_segmentation_mask, bbox_from_polygons
+from cocoutils.utils.geometry import (
+    determine_polygon_orientation, 
+    create_segmentation_mask, 
+    bbox_from_polygons,
+    extract_polygon_segments,
+    extract_bbox_from_segments,
+    extract_area_from_segments
+)
 import numpy as np
 import torch
 from shapely.geometry import Polygon
@@ -86,3 +93,86 @@ def test_bbox_from_polygons_all_invalid():
     
     result = bbox_from_polygons([invalid_poly1, invalid_poly2])
     assert result == [0.0, 0.0, 0.0, 0.0]
+
+
+# Tests for new geometry functions
+def test_extract_polygon_segments_empty_mask():
+    """Test extract_polygon_segments with empty mask."""
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    result = extract_polygon_segments(mask)
+    assert result == []
+
+
+def test_extract_polygon_segments_simple_square():
+    """Test extract_polygon_segments with simple square mask."""
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    mask[5:15, 5:15] = 1  # Create a square
+    result = extract_polygon_segments(mask)
+    assert len(result) > 0
+    assert all(len(seg) >= 6 for seg in result)  # At least 3 points each
+
+
+def test_extract_bbox_from_segments_empty():
+    """Test extract_bbox_from_segments with empty list."""
+    result = extract_bbox_from_segments([])
+    assert result == [0.0, 0.0, 0.0, 0.0]
+
+
+def test_extract_bbox_from_segments_single_segment():
+    """Test extract_bbox_from_segments with single segment."""
+    # Square segment from (0,0) to (10,10)
+    segment = [0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 10.0, 0.0]
+    result = extract_bbox_from_segments([segment])
+    expected = [0.0, 0.0, 10.0, 10.0]
+    assert result == expected
+
+
+def test_extract_bbox_from_segments_multiple_segments():
+    """Test extract_bbox_from_segments with multiple segments."""
+    segment1 = [0.0, 0.0, 0.0, 5.0, 5.0, 5.0, 5.0, 0.0]  # Square at (0,0) to (5,5)
+    segment2 = [10.0, 10.0, 10.0, 15.0, 15.0, 15.0, 15.0, 10.0]  # Square at (10,10) to (15,15)
+    result = extract_bbox_from_segments([segment1, segment2])
+    expected = [0.0, 0.0, 15.0, 15.0]  # Encompassing bbox
+    assert result == expected
+
+
+def test_extract_area_from_segments_empty():
+    """Test extract_area_from_segments with empty list."""
+    result = extract_area_from_segments([])
+    assert result == 0.0
+
+
+def test_extract_area_from_segments_single_square():
+    """Test extract_area_from_segments with single square segment."""
+    # 10x10 square should have area 100
+    segment = [0.0, 0.0, 0.0, 10.0, 10.0, 10.0, 10.0, 0.0]
+    result = extract_area_from_segments([segment])
+    assert abs(result - 100.0) < 1e-6  # Allow for floating point precision
+
+
+def test_extract_area_from_segments_triangle():
+    """Test extract_area_from_segments with triangle."""
+    # Triangle with base 10 and height 10, area = 0.5 * 10 * 10 = 50
+    segment = [0.0, 0.0, 10.0, 0.0, 5.0, 10.0]
+    result = extract_area_from_segments([segment])
+    assert abs(result - 50.0) < 1e-6
+
+
+def test_extract_functions_integration():
+    """Test all extract functions work together with real mask."""
+    # Create a simple square mask
+    mask = np.zeros((20, 20), dtype=np.uint8)
+    mask[5:15, 5:15] = 1  # 10x10 square
+    
+    # Extract segments
+    segments = extract_polygon_segments(mask)
+    assert len(segments) > 0
+    
+    # Extract bbox
+    bbox = extract_bbox_from_segments(segments)
+    assert len(bbox) == 4
+    assert bbox[2] > 0 and bbox[3] > 0  # Width and height should be positive
+    
+    # Extract area
+    area = extract_area_from_segments(segments)
+    assert area > 0

@@ -23,7 +23,7 @@ def test_simple_convert():
         # Run the converter
         output_json_path = os.path.join(d, "out.json")
         converter = CocoConverter(categories_path=cats_path)
-        converter.from_masks(input_dir=d, output_file=output_json_path)
+        converter.from_masks(input_path=d, output_file=output_json_path)
 
         # Check that the output file exists
         assert os.path.exists(output_json_path)
