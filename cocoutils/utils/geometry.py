@@ -26,9 +26,48 @@ def determine_polygon_orientation(polygon: List[float]) -> int:
                       (points[i][1] * points[(i+1) % len(points)][0]) 
                       for i in range(len(points)))
     
-    # Clockwise (negative signed area) is positive segment (1)
-    # Counter-clockwise (positive signed area) is hole (0)
+    # Clockwise (negative signed area) is positive segment (1) - FIELD STANDARD
+    # Counter-clockwise (positive signed area) is hole (0) - FIELD STANDARD
+    # WHY CLOCKWISE = POSITIVE: Official COCO datasets, COCO-REM, Open Images, 
+    # and ADE20K confirms that clockwise orientation is the de facto standard for positive 
+    # polygon annotations in computer vision datasets. This convention aligns with the 
+    # predominant practice in the field.
     return 1 if signed_area < 0 else 0
+
+
+def reverse_orientation(polygons):
+    """
+    Reverse the orientation of polygons and multipolygons (CCW <-> CW).
+    
+    This function takes polygon(s) in any format and returns them with reversed 
+    vertex order, effectively flipping their orientation from clockwise to 
+    counter-clockwise or vice versa.
+    
+    Args:
+        polygons: Can be either:
+            - Single polygon as flat list [x1, y1, x2, y2, ...]
+            - List of polygons [[x1, y1, x2, y2, ...], [x1, y1, x2, y2, ...], ...]
+            
+    Returns:
+        Same format as input but with reversed orientation
+    """
+    if not polygons:
+        return polygons
+    
+    # Check if it's a single polygon (flat list of coordinates) or list of polygons
+    if isinstance(polygons[0], (int, float)):
+        # Single polygon: flat list [x1, y1, x2, y2, ...]
+        if len(polygons) < 6:  # Need at least 3 points
+            return polygons
+            
+        # Convert to coordinate pairs, reverse order, then flatten back
+        points = [(polygons[i], polygons[i+1]) for i in range(0, len(polygons), 2)]
+        reversed_points = points[::-1]  # Reverse the order
+        return [coord for point in reversed_points for coord in point]
+    
+    else:
+        # List of polygons: [[x1, y1, x2, y2, ...], [...], ...]
+        return [reverse_orientation(polygon) for polygon in polygons]
 
 
 def create_segmentation_mask(segmentation, segmentation_types, img_height, img_width):
@@ -127,7 +166,7 @@ def bbox_from_polygons(polygons: List[Polygon]) -> List[float]:
     return [float(minx), float(miny), float(width), float(height)]
 
 
-def extract_polygon_segments(mask) -> List[List[float]]:
+def extract_polygon_segments(mask, reverse: bool = True) -> List[List[float]]:
     """
     Extract polygon segments from a binary mask with proper clockwise orientation.
     
@@ -136,6 +175,7 @@ def extract_polygon_segments(mask) -> List[List[float]]:
     
     Args:
         mask: Binary mask (2D array) representing a single object or component
+        reverse: If True, reverses orientation for COCO standard
         
     Returns:
         List of polygon segments as flat coordinate lists [x1, y1, x2, y2, ...]
@@ -172,6 +212,8 @@ def extract_polygon_segments(mask) -> List[List[float]]:
             # Extract coordinates
             coords = np.array(poly.exterior.coords).ravel().tolist()
             if len(coords) >= 6:  # At least 3 points
+                if reverse:
+                    coords = reverse_orientation(coords)
                 segments.append(coords)
                 
         except Exception:
@@ -222,17 +264,18 @@ def extract_bbox_from_segments(segments: List[List[float]]) -> List[float]:
         return [0.0, 0.0, 0.0, 0.0]
 
 
-def extract_area_from_segments(segments: List[List[float]]) -> float:
+def extract_area_from_segments(segments: List[List[float]], use_orientation: bool = True) -> float:
     """
-    Extract total area from polygon segments.
-    
-    Optimized implementation using numpy-based shoelace formula for better performance.
+    Extract total area from polygon segments, with proper hole handling by default.
     
     Args:
         segments: List of polygon segments as flat coordinate lists
-        
+        use_orientation: If True (default), uses determine_polygon_orientation to identify 
+                        positive areas (clockwise) and holes (counter-clockwise).
+                        If False, treats all segments as positive areas.
+                        
     Returns:
-        Total area of all segments combined
+        Total area. If use_orientation=True, holes are subtracted from positive areas.
     """
     if not segments:
         return 0.0
@@ -249,8 +292,20 @@ def extract_area_from_segments(segments: List[List[float]]) -> float:
                 # Area = 0.5 * |sum(x[i] * y[i+1] - x[i+1] * y[i])|
                 area = 0.5 * abs(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1]) + 
                                 (x[-1] * y[0] - x[0] * y[-1]))
-                total_area += area
+                
+                if use_orientation:
+                    # Determine if this is a positive area or hole
+                    orientation = determine_polygon_orientation(seg)
+                    if orientation == 1:  # Positive area (clockwise)
+                        total_area += area
+                    else:  # Hole (counter-clockwise)
+                        total_area -= area
+                else:
+                    # Treat all segments as positive areas
+                    total_area += area
+                    
             except (ValueError, TypeError, IndexError):
                 continue
     
-    return float(total_area)
+    # Ensure we don't return negative area
+    return max(0.0, float(total_area))
