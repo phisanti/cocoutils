@@ -39,7 +39,7 @@ class CocoVisualizer:
         image_path: str,
         image_id: Optional[int] = None,
         ann_ids: Optional[List[int]] = None,
-        show_masks: bool = True,
+        show_masks: bool = False,
         show_bboxes: bool = True,
         show_class_names: bool = True,
         crop_coords: Optional[Tuple[int, int, int, int]] = None,
@@ -61,7 +61,7 @@ class CocoVisualizer:
             crop_coords (Tuple, optional): (x0, y0, x1, y1) coordinates to crop the view.
             ax (plt.Axes, optional): A matplotlib axes object to plot on. If None, a new
                                      figure and axes are created.
-            plot_engine (str): 'mpl' (default, reliable) or 'rle' (experimental, fast but has issues).
+            plot_engine (str): 'mpl' (default, reliable), 'rle' (experimental, fast but has issues), or 'lines' (fast outline-only rendering).
         """
         if image_id is None:
             # Infer image_id from filename
@@ -115,14 +115,16 @@ class CocoVisualizer:
             ax: Matplotlib axes to plot on
             segmentation: List of polygon segments  
             color: Color for the polygons
-            plot_engine: 'mpl' (default, reliable) or 'rle' (experimental, fast for many objects)
+            plot_engine: 'mpl' (default, reliable), 'rle' (experimental, fast but has issues), or 'lines' (fast outline-only rendering)
         """
         if plot_engine == 'rle':
             self._plot_segmentation_rle(ax, segmentation, color)
         elif plot_engine == 'mpl':
             self._plot_segmentation_mpl(ax, segmentation, color)
+        elif plot_engine == 'lines':
+            self._plot_segmentation_mpl_lines(ax, segmentation, color)
         else:
-            raise ValueError(f"Unknown plot_engine: {plot_engine}. Use 'rle' or 'mpl'.")
+            raise ValueError(f"Unknown plot_engine: {plot_engine}. Use 'rle', 'mpl', or 'lines'.")
 
     def visualize_annotations_masked(self, image: np.ndarray, annotation_ids: Union[int, List[int]], 
                                    ax: Optional[plt.Axes] = None, show: bool = True) -> Optional[plt.Axes]:
@@ -329,3 +331,65 @@ class CocoVisualizer:
             # Display with correct extent (key fix: proper coordinate mapping)
             ax.imshow(rgba_mask, extent=[x, x+w, y+h, y], 
                      aspect='auto', interpolation='nearest', alpha=0.8)
+
+    def _plot_segmentation_mpl_lines(self, ax: plt.Axes, segmentation: List[List[float]], color):
+        """
+        Fast polygon outline rendering using line plots instead of filled areas.
+        Renders positive areas as solid lines and holes as dashed lines.
+        Uses parallelization for polygon preparation to improve performance.
+        
+        Args:
+            ax: Matplotlib axes to plot on
+            segmentation: List of polygon segments
+            color: Color for the polygons
+        """
+        if not segmentation:
+            return
+        
+        # Parallel preparation of polygon data
+        from concurrent.futures import ThreadPoolExecutor
+        import functools
+        
+        def prepare_polygon_line_data(seg):
+            """Prepare individual polygon for line rendering."""
+            try:
+                orientation = determine_polygon_orientation(seg)
+                poly_coords = np.array(seg).reshape((-1, 2))
+                
+                if len(poly_coords) < 3:
+                    return None
+                    
+                # Close the polygon by connecting last point to first
+                closed_coords = np.vstack([poly_coords, poly_coords[0:1]])
+                
+                return {
+                    'coords': closed_coords,
+                    'is_hole': orientation == 0,  # Counter-clockwise = hole
+                    'linestyle': '--' if orientation == 0 else '-',
+                    'linewidth': 2 if orientation == 0 else 2,
+                    'alpha': 0.8 if orientation == 0 else 1.0
+                }
+            except Exception:
+                return None
+        
+        # Process polygons in parallel if we have multiple segments
+        if len(segmentation) > 3:  # Only parallelize if worthwhile
+            with ThreadPoolExecutor(max_workers=min(4, len(segmentation))) as executor:
+                polygon_data_list = list(executor.map(prepare_polygon_line_data, segmentation))
+        else:
+            # For small numbers, avoid threading overhead
+            polygon_data_list = [prepare_polygon_line_data(seg) for seg in segmentation]
+        
+        # Filter out failed preparations
+        polygon_data_list = [data for data in polygon_data_list if data is not None]
+        
+        # Sequential rendering (matplotlib is not thread-safe)
+        for poly_data in polygon_data_list:
+            coords = poly_data['coords']
+
+            # Plot the outline (dashed for holes, solid for positive areas)
+            ax.plot(coords[:, 0], coords[:, 1],
+                   color=color,
+                   linestyle=poly_data['linestyle'],
+                   linewidth=poly_data['linewidth'],
+                   alpha=poly_data['alpha'])
