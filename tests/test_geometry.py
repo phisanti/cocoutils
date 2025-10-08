@@ -112,6 +112,20 @@ def test_extract_polygon_segments_simple_square():
     assert all(len(seg) >= 6 for seg in result)  # At least 3 points each
 
 
+def test_extract_polygon_segments_clamps_border_coordinates():
+    """Ensure objects touching borders do not yield negative coordinates."""
+    mask = np.zeros((10, 10), dtype=np.uint8)
+    mask[:, :4] = 1  # Object touches left border
+    segments = extract_polygon_segments(mask)
+    assert segments
+
+    coords = np.concatenate([np.array(seg).reshape(-1, 2) for seg in segments], axis=0)
+    assert coords[:, 0].min() >= 0.0
+    assert coords[:, 1].min() >= 0.0
+    assert coords[:, 0].max() <= mask.shape[1] - 1 + 1e-6
+    assert coords[:, 1].max() <= mask.shape[0] - 1 + 1e-6
+
+
 def test_extract_bbox_from_segments_empty():
     """Test extract_bbox_from_segments with empty list."""
     result = extract_bbox_from_segments([])
@@ -134,6 +148,19 @@ def test_extract_bbox_from_segments_multiple_segments():
     result = extract_bbox_from_segments([segment1, segment2])
     expected = [0.0, 0.0, 15.0, 15.0]  # Encompassing bbox
     assert result == expected
+
+
+def test_extract_bbox_from_segments_clamps_border_values():
+    """Ensure bounding boxes are clipped to valid image coordinates."""
+    mask = np.zeros((12, 12), dtype=np.uint8)
+    mask[:5, 8:] = 1  # Touches top and right borders
+    segments = extract_polygon_segments(mask)
+    bbox = extract_bbox_from_segments(segments)
+    x, y, w, h = bbox
+    assert x >= 0.0
+    assert y >= 0.0
+    assert x + w <= mask.shape[1]
+    assert y + h <= mask.shape[0]
 
 
 def test_extract_area_from_segments_empty():

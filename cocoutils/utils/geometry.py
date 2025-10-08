@@ -192,10 +192,20 @@ def extract_polygon_segments(mask, reverse: bool = True) -> List[List[float]]:
     
     segments = []
     
+    height, width = mask.shape
+
     for contour in contours:
         # Convert from (row, col) to (x, y) and subtract padding
-        points = [(col - 1, row - 1) for row, col in contour]
-        
+        points_array = np.array([(col - 1, row - 1) for row, col in contour], dtype=float)
+
+        # Clamp coordinates to the valid image extent to avoid negative values at borders
+        if points_array.size == 0:
+            continue
+        points_array[:, 0] = np.clip(points_array[:, 0], 0.0, float(width - 1))
+        points_array[:, 1] = np.clip(points_array[:, 1], 0.0, float(height - 1))
+
+        points = [tuple(point) for point in points_array]
+
         if len(points) < 3:
             continue
             
@@ -209,8 +219,11 @@ def extract_polygon_segments(mask, reverse: bool = True) -> List[List[float]]:
             if poly.is_empty or not poly.is_valid:
                 continue
             
-            # Extract coordinates
-            coords_array = np.array(poly.exterior.coords)
+            # Extract coordinates and clamp again in case simplification introduced slight
+            # numerical drifts outside the image bounds
+            coords_array = np.array(poly.exterior.coords, dtype=float)
+            coords_array[:, 0] = np.clip(coords_array[:, 0], 0.0, float(width - 1))
+            coords_array[:, 1] = np.clip(coords_array[:, 1], 0.0, float(height - 1))
             coords = coords_array.ravel().tolist()
             if len(coords) >= 6:  # At least 3 points
                 if reverse:
