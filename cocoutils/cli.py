@@ -7,6 +7,8 @@ from .reconstruct import CocoReconstructor
 from .merge import CocoMerger
 from .visualise import CocoVisualizer
 from .split import CocoSplitter
+from .health import CocoHealthChecker
+from .health.formatters import HumanFormatter, TokenOptimizedFormatter
 import matplotlib.pyplot as plt
 
 app = typer.Typer(help="A toolkit for COCO annotation generation, conversion, merging, and visualisation.")
@@ -148,6 +150,35 @@ def split(
         if len(created_files) > 5:
             print(f"  ... and {len(created_files) - 5} more files")
             
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+        raise typer.Exit(code=1)
+
+@app.command()
+def health(
+    coco_file: Annotated[str, typer.Option("--coco-file", "-c", help="Path to the COCO annotations JSON file")],
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Show detailed per-image statistics")] = False,
+    format: Annotated[str, typer.Option("--format", "-f", help="Output format: 'human' or 'token_optim'")] = "token_optim"
+):
+    """
+    Run health checks on a COCO annotation file.
+    
+    Validates category IDs, checks for orphaned annotations, validates bounding boxes,
+    and provides statistical summaries.
+    """
+    try:
+        checker = CocoHealthChecker(coco_file)
+        results = checker.run_all_checks(verbose=verbose)
+        
+        # Format output based on requested format
+        if format == "token_optim":
+            formatter = TokenOptimizedFormatter(results, coco_file)
+        else:
+            formatter = HumanFormatter(results, coco_file)
+        
+        output = formatter.format()
+        print(output)
+        
     except (ValueError, FileNotFoundError) as e:
         print(f"Error: {e}")
         raise typer.Exit(code=1)
