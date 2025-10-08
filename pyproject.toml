@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "cocoutils"
-version = "0.2.2"
+version = "0.2.3"
 description = "A toolkit for COCO annotation generation, conversion, merging, and visualisation."
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
